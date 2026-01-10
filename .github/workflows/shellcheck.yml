@@ -25,7 +25,7 @@ jobs:
 
           mapfile -t sh_files < <(
             git ls-files '*.sh' |
-            xargs -r grep -lE '^#!.*/(ba)?sh'
+            xargs -r grep -lE '^#!.*(ba)?sh'
           )
 
           mapfile -t bats_files < <(
