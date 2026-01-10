@@ -1,59 +1,137 @@
 # bedrock-docker-image
-Dockerfile for Minecraft Bedrock
 
-## Building the Image
+A small, reproducible Docker image for running a **Minecraft Bedrock Dedicated Server**.
 
-To build the image, you need to provide the S3 bucket and file name where your Minecraft Bedrock server zip is stored. You also need to provide AWS credentials as secrets.
+This image is built in two stages:
 
-```bash
-docker build \
-  --secret id=aws_credentials,src=$HOME/.aws/credentials \
-  --secret id=aws_config,src=$HOME/.aws/config \
-  --build-arg S3_BUCKET=your-bucket-name \
-  --build-arg S3_FILE=bedrock-server.zip \
-  -t bedrock-server .
-```
+1. **Fetcher stage** downloads the Bedrock server ZIP from **S3**.
+2. **Runner stage** extracts it, stores **world/config data** on a persistent volume, and starts the server.
 
-## Running the Container
+---
 
-### Default (Bridge) Mode
-By default, Docker uses the bridge network. This allows the container to access the internet (outbound) for services like authentication. To allow players to connect (inbound), you must map the Minecraft UDP port:
+## Table of Contents
 
-```bash
-docker run -d \
-  -p 19132:19132/udp \
-  --name minecraft-server \
-  bedrock-server
-```
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Build the Image](#build-the-image)
+- [Configuration](#configuration-environment-variables)
+- [Updating the Server Version](#updating-the-server-version)
+- [CI](#ci-github-actions)
+- [Troubleshooting](#troubleshooting)
+  - [Players can't connect](#players-cant-connect)
+  - [Container starts but server doesn't load worlds/configs](#container-starts-but-server-doesnt-load-worldsconfig)
+  - [Build fails downloading from S3](#build-fails-downloading-from-s3)
+- [License](#license)
 
-### Host Mode
-If you want the container to share the host's network stack directly (which can simplify connectivity issues and improve performance), use the `--network host` flag:
+---
 
-```bash
-docker run -d \
-  --network host \
-  --name minecraft-server \
-  bedrock-server
-```
+## Features
 
-Note: In host mode, you don't need `-p` because the server will bind directly to the host's port.
+- **Multi-stage build** (keeps runtime image lean)
+- Fetch server ZIP from **Amazon S3** at build time
+- Persistent data via a mounted **`/data`** volume
+- Configure `server.properties` using **environment variables**
+- Works in both **bridge** (`-p .../udp`) and **host** networking modes
 
-## Environment Variables
+---
 
-You can override `server.properties` values using environment variables:
+## Prerequisites
 
-- `SERVER_NAME`
-- `GAMEMODE`
-- `DIFFICULTY`
-- `ONLINE_MODE`
-- (and many others, see `src/run.sh` for the full list)
+- Docker with **BuildKit** enabled (recommended: Buildx)
+- Access to an S3 bucket containing the Bedrock server ZIP
+- AWS credentials available as build secrets (examples below)
+
+> Note: This repo expects you to provide the Bedrock server ZIP yourself (typically downloaded from the official source and uploaded to your S3 bucket).
+
+---
+
+## Build the Image
+
+The Dockerfile expects:
+
+- Build args:
+  - `S3_BUCKET` – S3 bucket name
+  - `S3_FILE` – object key for the Bedrock ZIP (e.g. `bedrock-server.zip`)
+- Build secrets (BuildKit secret IDs):
+  - `aws_access_key_id`
+  - `aws_secret_access_key`
+  - `aws_session_token` (optional, but supported)
+  - `aws_region`
+
+---
+
+## Configuration (environment variables)
+
+On container start, the entrypoint updates `server.properties` using environment variables when they are set.
+
+Common options:
+
+- `SERVER_NAME` → `server-name`
+- `GAMEMODE` → `gamemode`
+- `DIFFICULTY` → `difficulty`
+- `ALLOW_CHEATS` → `allow-cheats`
+- `MAX_PLAYERS` → `max-players`
+- `ONLINE_MODE` → `online-mode`
+- `ALLOW_LIST` → `allow-list`
+- `SERVER_PORT` → `server-port`
+- `LEVEL_NAME` → `level-name`
+- `LEVEL_SEED` → `level-seed`
 
 Example:
-```bash
-docker run -d \
-  -p 19132:19132/udp \
-  -e SERVER_NAME="My Awesome Server" \
-  -e ONLINE_MODE=true \
-  --name minecraft-server \
-  bedrock-server
-```
+```bash 
+docker run -d
+--name bedrock
+-p 19132:19132/udp
+-v bedrock-data:/data
+-e SERVER_NAME="My Bedrock Server"
+-e GAMEMODE=survival
+-e DIFFICULTY=normal
+-e MAX_PLAYERS=10
+-e ONLINE_MODE=true
+bedrock-server:latest
+``` 
+
+If you want the full list of supported env vars, check `src/run.sh`.
+
+---
+
+## Updating the Server Version
+
+Because the Bedrock ZIP is fetched at **build time**, you update by:
+
+1. Uploading a new ZIP to S3 (or changing the object key)
+2. Rebuilding the image with `S3_BUCKET` / `S3_FILE`
+3. Recreating the container (keep the same `/data` volume if you want to preserve worlds/config)
+
+---
+
+## CI (GitHub Actions)
+
+This repository includes workflows that (at minimum) validate builds and run checks. Build validation uses AWS credentials via OIDC and passes build args/secrets to the Docker build.
+
+---
+
+## Troubleshooting
+
+### Players can’t connect
+- Ensure you mapped the correct port/protocol: `-p 19132:19132/udp`
+- Check host firewall/security groups allow **UDP 19132**
+- If you’re on a VPS/cloud VM, confirm inbound rules include UDP
+
+### Container starts but server doesn’t load worlds/config
+- Confirm `/data` is mounted and writable
+- Inspect logs:
+  ```bash
+  docker logs -f bedrock
+  ```
+
+### Build fails downloading from S3
+- Verify `S3_BUCKET` / `S3_FILE` are correct
+- Ensure the AWS identity used for the build has permission for `s3:GetObject` on that object
+- Confirm `AWS_REGION` matches where you’re operating (or where your config expects)
+
+---
+
+## License
+
+See [LICENSE](LICENSE).
