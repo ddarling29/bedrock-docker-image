@@ -12,7 +12,6 @@ function extract_file() {
 
   if unzip -q "$zip_path" -d "$dest_dir"; then
     echo "Extraction successful."
-    rm "$zip_path"
   else
     echo "Extraction failed." >&2
     exit 1

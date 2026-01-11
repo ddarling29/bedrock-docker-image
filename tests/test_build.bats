@@ -43,7 +43,6 @@ teardown() {
     run extract_file "$TEST_TEMP_DIR/dummy.zip" "$TEST_TEMP_DIR/dest"
     assert_success
     assert_output --partial "Extraction successful."
-    [ ! -f "$TEST_TEMP_DIR/dummy.zip" ]
 }
 
 @test "extract_file: failure" {
