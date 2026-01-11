@@ -58,7 +58,31 @@ else
   DATA_DIR_PATH="$(cd "$DATA_DIR_PATH" && pwd)"
 fi
 
-PROPERTIES_PATH="$DATA_DIR_PATH/server.properties"
+# ---- /data bootstrap logic ----
+RUNTIME_DIR="${RUNTIME_DIR:-/data}"
+mkdir -p "$RUNTIME_DIR"
+
+if [[ ! -d "$DATA_DIR_PATH" ]]; then
+  echo "Error: --data must point to an existing directory: $DATA_DIR_PATH" >&2
+  exit 2
+fi
+
+is_dir_empty() {
+  local dir="$1"
+  shopt -s nullglob dotglob
+  local items=("$dir"/*)
+  shopt -u nullglob dotglob
+  ((${#items[@]} == 0))
+}
+
+if is_dir_empty "$RUNTIME_DIR"; then
+  echo "/data is empty; copying initial data from: $DATA_DIR_PATH -> $RUNTIME_DIR"
+  cp -a "$DATA_DIR_PATH"/. "$RUNTIME_DIR"/
+else
+  echo "/data is not empty; skipping data copy "
+fi
+
+PROPERTIES_PATH="$RUNTIME_DIR/server.properties"
 
 declare -A PROPS=()
 
@@ -136,9 +160,25 @@ if ! (
   echo "Error loading server properties: failed to update $PROPERTIES_PATH" >&2
 fi
 
-export LD_LIBRARY_PATH="$DATA_DIR_PATH"
+cleanup() {
+  echo "Shutting down health listener..."
+  if [[ -n "${HEALTH_PID:-}" ]]; then
+    kill "$HEALTH_PID" 2>/dev/null || true
+  fi
+}
+
+trap cleanup TERM INT EXIT
+
+# Ensure healthcheck script is executable
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HEALTHCHECK_PATH="$SCRIPT_DIR/healthcheck.sh"
+
+socat -T 5 TCP-LISTEN:19134,reuseaddr,fork EXEC:"$HEALTHCHECK_PATH" &
+HEALTH_PID=$!
+
+export LD_LIBRARY_PATH="$RUNTIME_DIR"
 
 chmod 0755 "$BINARY_PATH" || true
 
-cd "$DATA_DIR_PATH"
+cd "$RUNTIME_DIR"
 exec "$BINARY_PATH"

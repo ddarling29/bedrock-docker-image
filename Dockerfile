@@ -15,7 +15,7 @@ RUN --mount=type=secret,id=aws_access_key_id \
 
 FROM ubuntu:24.04 AS runner
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcurl4 ca-certificates unzip \
+    libcurl4 ca-certificates unzip socat \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /bedrock
@@ -23,9 +23,10 @@ WORKDIR /bedrock
 COPY --from=fetcher /out/bedrock-server.zip ./bedrock-server.zip
 COPY src/ ./scripts
 
-RUN ./scripts/build.sh ./bedrock-server.zip /opt/bedrock-server /data/bedrock-server
+RUN ./scripts/build.sh ./bedrock-server.zip /opt/bedrock-server /bedrock/bedrock-server
 
 EXPOSE 19132/udp
+EXPOSE 19134/tcp
 VOLUME ["/data"]
 
-ENTRYPOINT [ "./scripts/run.sh", "--binary", "/opt/bedrock-server/bedrock_server", "--data", "/data/bedrock-server" ]
+ENTRYPOINT [ "./scripts/run.sh", "--binary", "/opt/bedrock-server/bedrock_server", "--data", "/bedrock/bedrock-server" ]
