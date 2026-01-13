@@ -1,0 +1,50 @@
+name: ShellCheck
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  shellcheck:
+    name: Run ShellCheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Run ShellCheck on bash and bats scripts
+        run: |
+          set -euo pipefail
+
+          mapfile -t sh_files < <(
+            git ls-files '*.sh' |
+            xargs -r grep -lE '^#!.*(ba)?sh'
+          )
+
+          mapfile -t bats_files < <(
+            git ls-files '*.bats'
+          )
+
+          if [[ ${#sh_files[@]} -eq 0 && ${#bats_files[@]} -eq 0 ]]; then
+            echo "No shell or bats files found."
+            exit 0
+          fi
+
+          if [[ ${#sh_files[@]} -gt 0 ]]; then
+            echo "ShellCheck (bash):"
+            printf ' - %s\n' "${sh_files[@]}"
+            shellcheck --severity=warning --shell=bash "${sh_files[@]}"
+          fi
+
+          if [[ ${#bats_files[@]} -gt 0 ]]; then
+            echo "ShellCheck (bats):"
+            printf ' - %s\n' "${bats_files[@]}"
+            shellcheck --severity=warning --shell=bats "${bats_files[@]}"
+          fi
